@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "mechurisr.media-search",
+  "name": "Media Search",
+  "version": "1.0.0",
+  "author": "chanwook lee",
+  "license": "MIT",
+  "description": "Replaces Omarchy's media widget with one that also searches YouTube and streams the pick through mpv, with optional autoplay of the related radio mix.",
+  "homepage": "https://github.com/mechurisr/omarchy-media-search",
+  "repository": "https://github.com/mechurisr/omarchy-media-search",
+  "keywords": [
+    "media",
+    "mpris",
+    "music",
+    "youtube",
+    "yt-dlp"
+  ],
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Media Search",
+    "description": "MPRIS now-playing with playback controls and YouTube search",
+    "category": "Media",
+    "allowMultiple": false,
+    "defaultSection": "left"
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.media"
+  }
+}
