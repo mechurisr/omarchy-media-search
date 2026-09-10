@@ -52,6 +52,11 @@ running the new `BarWidget.qml` against the old `Service.qml`.
 of the service, so keeping the service mounted means an unrelated plugin's
 reload no longer stops whatever you are listening to.
 
+What changed in each version is on the
+[releases page](https://github.com/mechurisr/omarchy-media-search/releases).
+Tags are for reading only — `omarchy plugin update` fetches `origin HEAD` and
+fast-forwards, so it always tracks `main` rather than the latest tag.
+
 ### Requirements
 
 `mpv`, `mpv-mpris`, and `yt-dlp`. All three are in `omarchy-base.packages`, so a
