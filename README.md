@@ -35,6 +35,23 @@ Enabling it replaces the built-in media widget: the manifest declares
 your bar layout and adds `omarchy.media` to `disabledPlugins`. Removing this
 plugin puts the built-in back.
 
+### Updating
+
+```bash
+omarchy plugin update mechurisr.media-search
+omarchy restart shell
+```
+
+The restart is not optional. `omarchy plugin update` ends in a plugin rescan,
+which reloads bar widgets in place — but this plugin's manifest sets
+`keepLoaded: true`, and since Omarchy 4.0.3 a `keepLoaded` service survives that
+reload instead of being torn down and rebuilt. Without the restart you end up
+running the new `BarWidget.qml` against the old `Service.qml`.
+
+`keepLoaded` earns its place the rest of the time: the `mpv` process is a child
+of the service, so keeping the service mounted means an unrelated plugin's
+reload no longer stops whatever you are listening to.
+
 ### Requirements
 
 `mpv`, `mpv-mpris`, and `yt-dlp`. All three are in `omarchy-base.packages`, so a
@@ -44,7 +61,19 @@ standard Omarchy install already has them and there is nothing extra to install.
 exists — that is where the package puts it. Without it, a track started from the
 search panel plays but never appears in the widget.
 
-Built against the Omarchy 4.0 shell (`qs.Ui`, `qs.Commons`).
+The built-in bar (`omarchy.bar`). Omarchy 4.0.3 hands widgets rendered by a
+third-party replacement bar a shell facade with no service lookup on it, so
+under such a bar this widget cannot reach its own service: now-playing stays
+empty, the transport buttons have no player to act on, and the panel says the
+search is unavailable. Only the **Open YouTube Music** button still does
+anything. The service itself is unaffected — it is loaded by the shell, not by
+the bar — so the `media` IPC target and your media keys keep working. There is
+no workaround on the plugin side: the host withholds the lookup deliberately,
+so an untrusted bar cannot retrieve any plugin's live service object.
+
+Built against the Omarchy 4.0 shell (`qs.Ui`, `qs.Commons`); verified against
+4.0.3, where third-party plugins receive capability-scoped facades in place of
+the host `bar` and `shell` objects.
 
 ## Media keys
 

@@ -22,6 +22,14 @@ BarWidget {
   readonly property var activePlayer: mediaService ? mediaService.activePlayer : null
   readonly property var sourcePlayers: mediaService ? mediaService.sourcePlayers : []
 
+  // Since Omarchy 4.0.3 a widget hosted by a third-party replacement bar gets
+  // a service-less shell facade — the host will not hand an untrusted bar a
+  // lookup that could retrieve any plugin's live service object — so
+  // serviceFor() comes back null there. Nothing the plugin can do about it,
+  // but the panel should say so instead of offering a search box that
+  // silently does nothing.
+  readonly property bool serviceAvailable: mediaService !== null
+
   readonly property bool hasMedia: activePlayer !== null && (activePlayer.trackTitle || activePlayer.trackArtist)
   // No MPRIS player at all: stay on the bar as a launcher instead of vanishing.
   readonly property bool idle: !hasMedia
@@ -265,6 +273,8 @@ BarWidget {
           foreground: root.bar.foreground
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.body
+          enabled: root.serviceAvailable
+          opacity: enabled ? 1.0 : 0.4
 
           onAccepted: root.runSearch()
           Keys.onEscapePressed: root.closeFromPanel()
@@ -284,7 +294,7 @@ BarWidget {
           foreground: root.bar.foreground
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY
-          enabled: !root.searching && searchField.text.trim() !== ""
+          enabled: root.serviceAvailable && !root.searching && searchField.text.trim() !== ""
           opacity: enabled ? 1.0 : 0.4
           onClicked: root.runSearch()
         }
@@ -292,10 +302,13 @@ BarWidget {
 
       Text {
         width: parent.width
-        text: root.searching ? "Searching…" : root.searchError
+        text: !root.serviceAvailable
+          ? "Search needs the built-in bar: a replacement bar cannot reach this plugin's service."
+          : (root.searching ? "Searching…" : root.searchError)
         color: Qt.darker(root.bar.foreground, 1.4)
         font.family: root.bar.fontFamily
         font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
         elide: Text.ElideRight
         visible: text !== ""
       }
