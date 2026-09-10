@@ -56,6 +56,8 @@ What changed in each version is on the
 [releases page](https://github.com/mechurisr/omarchy-media-search/releases).
 Tags are for reading only — `omarchy plugin update` fetches `origin HEAD` and
 fast-forwards, so it always tracks `main` rather than the latest tag.
+The Omarchy 4.0.3 compatibility work is
+[v1.0.1](https://github.com/mechurisr/omarchy-media-search/releases/tag/v1.0.1).
 
 ### Requirements
 
