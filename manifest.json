@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "mechurisr.media-search",
   "name": "Media Search",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "chanwook lee",
   "license": "MIT",
   "description": "Replaces Omarchy's media widget with one that also searches YouTube and streams the pick through mpv, with optional autoplay of the related radio mix.",
