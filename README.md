@@ -33,7 +33,8 @@ omarchy plugin add https://github.com/mechurisr/omarchy-media-search.git --enabl
 Enabling it replaces the built-in media widget: the manifest declares
 `omarchy.clonedFrom: "omarchy.media"`, so Omarchy takes the built-in's slot in
 your bar layout and adds `omarchy.media` to `disabledPlugins`. Removing this
-plugin puts the built-in back.
+plugin puts the built-in back — see [Removing](#removing) for the one case that
+needs a manual step.
 
 ### Updating
 
@@ -58,6 +59,29 @@ Tags are for reading only — `omarchy plugin update` fetches `origin HEAD` and
 fast-forwards, so it always tracks `main` rather than the latest tag.
 The Omarchy 4.0.3 compatibility work is
 [v1.0.1](https://github.com/mechurisr/omarchy-media-search/releases/tag/v1.0.1).
+
+### Removing
+
+```bash
+omarchy plugin remove mechurisr.media-search
+```
+
+The built-in media widget comes back in the same bar slot, and this is the one
+path that needs no shell restart: a removed plugin's service is destroyed on
+the rescan that follows, `keepLoaded` or not. Whatever the widget was streaming
+stops with it — `mpv` runs as a child of the service, so it exits rather than
+being left playing with nothing left to stop it.
+
+One case needs a manual step. Omarchy re-enables `omarchy.media` on removal
+only when *this* plugin is what disabled it, which it records in
+`cloneSourceRestores` in `shell.json`. If the built-in was already disabled when
+you enabled this plugin — another clone of `omarchy.media` got there first, or
+you had switched it off yourself — removal restores the bar entry but leaves the
+built-in disabled, so the slot renders empty. Put it back with:
+
+```bash
+omarchy-shell shell setPluginEnabled omarchy.media true
+```
 
 ### Requirements
 
