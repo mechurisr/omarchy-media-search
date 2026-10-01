@@ -14,6 +14,8 @@ the transport buttons need no special casing for it.
 ## Features
 
 - Search YouTube from the bar and play a result without opening a browser
+- Watch any YouTube result in an `mpv` video window, or open the currently playing
+  YouTube track from the panel
 - Search Spotify too, and start the pick on your Spotify app — see
   [Spotify](#spotify)
 - Autoplay related: when a locally streamed track ends on its own, queue the
@@ -257,10 +259,15 @@ in `~/.config/omarchy/shell.json`:
 | `Down` in the search field | Move into the results |
 | `Up` / `Down` in the results | Move the cursor |
 | `Enter` | Play the selected result |
+| `Watch` beside a YouTube result | Play its video in an `mpv` window |
 | `Escape` | Back to the search field, or close the panel |
 
 The stop button (`󰓛`) appears only while `mpv` is the active source — it stops
 playback this widget started, and means nothing for other players.
+**Watch video** appears while a YouTube track started by this plugin is playing.
+Opening a video replaces the plugin's background audio stream with a visible
+`mpv` player. Switching the current track keeps its playback position when
+MPRIS reports it. Closing the video window stops playback.
 
 Repeat and Autoplay related are mutually exclusive: a looping track never
 reaches EOF, so autoplay would never get a chance to fire. Turning one on clears

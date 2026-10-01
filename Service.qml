@@ -154,7 +154,7 @@ Item {
   // that existed beforehand so the newcomer can be identified.
   property var localPlaybackPending: null
 
-  function playResult(resultId) {
+  function playResult(resultId, showVideo, startAt) {
     var id = String(resultId || "").trim()
     if (!id) return false
     if (id.indexOf("spotify:") === 0) return playSpotify(id)
@@ -181,6 +181,8 @@ Item {
     if (playerProc.running) intentionalStop = true
     playerProc.running = false
     playerProc.videoId = id
+    playerProc.showVideo = !!showVideo
+    playerProc.startAt = Math.max(0, Number(startAt) || 0)
     lastLocalVideoId = id
     rememberAutoplayHistory(id)
     Qt.callLater(function() { playerProc.running = true })
@@ -230,6 +232,22 @@ Item {
     // process whose onExited will actually consume it.
     if (playerProc.running) intentionalStop = true
     playerProc.running = false
+  }
+
+  readonly property bool localAudioPlaying: playerProc.running && !playerProc.showVideo
+    && lastLocalVideoId !== ""
+
+  function watchVideo(videoId) {
+    var id = String(videoId || "").trim()
+    if (!/^[A-Za-z0-9_-]{11}$/.test(id)) return false
+    return playResult(id, true)
+  }
+
+  function watchCurrentVideo() {
+    if (!localAudioPlaying) return false
+    var position = activePlayer && activePlayer.identity === "mpv"
+      && activePlayer.positionSupported ? activePlayer.position : 0
+    return playResult(lastLocalVideoId, true, position)
   }
 
   function formatDuration(total) {
@@ -390,9 +408,12 @@ Item {
   Process {
     id: playerProc
     property string videoId: ""
+    property bool showVideo: false
+    property real startAt: 0
     // mpv autoloads the MPRIS script from /etc/mpv/scripts, so no --script
     // flag is needed for this player to appear in Mpris.players.
-    command: ["mpv", "--no-video", "--no-terminal",
+    command: ["mpv", "--no-terminal", showVideo ? "--force-window=yes" : "--no-video",
+              "--start=" + startAt,
               "https://www.youtube.com/watch?v=" + videoId]
 
     // Fires both when mpv reaches EOF on its own and when we kill it
@@ -402,6 +423,9 @@ Item {
       var wasIntentional = root.intentionalStop
       root.intentionalStop = false
       if (wasIntentional) return
+      // Closing a video window is an intentional end from the viewer's point
+      // of view; do not launch the next audio track behind their back.
+      if (showVideo) return
       if (root.autoplayRelated && root.lastLocalVideoId) root.playRelated(root.lastLocalVideoId)
     }
   }

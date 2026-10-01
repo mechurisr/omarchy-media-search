@@ -118,6 +118,10 @@ BarWidget {
     popupOpen = false
   }
 
+  function watchResult(resultId) {
+    if (mediaService && mediaService.watchVideo(resultId)) popupOpen = false
+  }
+
   function openPanel() { popupOpen = true }
   function togglePanel() { popupOpen = !popupOpen }
 
@@ -428,7 +432,8 @@ BarWidget {
               }
 
               Column {
-                width: parent.width - Style.space(24) - durationLabel.width
+                width: parent.width - Style.space(watchButton.visible ? 40 : 32)
+                  - durationLabel.width - (watchButton.visible ? watchButton.width : 0)
                 spacing: Style.space(1)
                 anchors.verticalCenter: parent.verticalCenter
 
@@ -463,12 +468,24 @@ BarWidget {
                 font.pixelSize: Style.font.caption
                 anchors.verticalCenter: parent.verticalCenter
               }
+
+              Button {
+                id: watchButton
+                text: "Watch"
+                foreground: root.bar.foreground
+                horizontalPadding: Style.spacing.controlPaddingX
+                verticalPadding: Style.spacing.controlPaddingY
+                visible: resultRow.modelData.provider === "youtube"
+                anchors.verticalCenter: parent.verticalCenter
+                onClicked: root.watchResult(resultRow.modelData.id)
+              }
             }
 
             HoverHandler { id: resultHover }
 
             MouseArea {
               anchors.fill: parent
+              anchors.rightMargin: watchButton.visible ? watchButton.width + Style.space(8) : 0
               cursorShape: Qt.PointingHandCursor
               onClicked: root.playResult(resultRow.modelData.id)
             }
@@ -594,6 +611,17 @@ BarWidget {
           verticalPadding: Style.spacing.controlPaddingY
           visible: root.identity === "mpv"
           onClicked: if (root.mediaService) root.mediaService.stopPlayback()
+        }
+
+        Button {
+          text: "Watch video"
+          foreground: root.bar.foreground
+          horizontalPadding: Style.spacing.controlPaddingX
+          verticalPadding: Style.spacing.controlPaddingY
+          visible: root.identity === "mpv" && root.mediaService && root.mediaService.localAudioPlaying
+          onClicked: {
+            if (root.mediaService.watchCurrentVideo()) root.popupOpen = false
+          }
         }
       }
 
