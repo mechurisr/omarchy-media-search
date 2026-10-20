@@ -191,8 +191,12 @@ A minimal `~/.config/spotifyd/spotifyd.conf`:
 device_name = "Omarchy"
 backend = "pulseaudio"
 use_mpris = true
-autoplay = true
+autoplay = false
 ```
+
+Keep `autoplay = false`. With it on, spotifyd loads a Spotify radio playlist
+once a pick ends, even with Autoplay related off, and leaves it sitting paused
+in the widget. Autoplay related already queues what comes next.
 
 Spotify sometimes refuses librespot-based players the decryption key for an
 account (`error audio key 0 1` in `journalctl --user -u spotifyd`), and the
