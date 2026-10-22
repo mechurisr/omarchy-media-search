@@ -84,6 +84,30 @@ BarWidget {
     mediaService.search(q)
   }
 
+  // Paste runs in a separate process so a huge or never-ending clipboard
+  // offer costs at most 2 s and 4 KiB instead of the shell's memory.
+  function pasteQuery() {
+    if (!pasteProc.running) pasteProc.running = true
+  }
+
+  function insertPasted(t) {
+    // The byte cap can split a UTF-8 sequence; drop the dangling remainder.
+    t = t.replace(/\uFFFD+$/, "").replace(/[\r\n\t]+/g, " ")
+    if (!t || !popupOpen) return
+    if (searchField.selectedText !== "")
+      searchField.remove(searchField.selectionStart, searchField.selectionEnd)
+    searchField.insert(searchField.cursorPosition, t)
+  }
+
+  Process {
+    id: pasteProc
+    command: ["sh", "-c", "timeout 2 wl-paste --no-newline --type text | head -c 4096"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.insertPasted(text)
+    }
+  }
+
   function focusSearch() {
     selectedIndex = -1
     searchField.forceActiveFocus()
@@ -305,32 +329,106 @@ BarWidget {
         width: parent.width
         spacing: Style.space(6)
 
-        TextField {
-          id: searchField
+        // A bare TextEdit rather than the shell's TextField. The TextInput
+        // under every TextField fetches the whole clipboard text on each
+        // clipboard change to update canPaste, with no size or time bound;
+        // TextEdit only checks the offer's MIME types there and still takes
+        // fcitx5 input. The two places TextEdit itself would read clipboard
+        // data, the paste keys and middle-click primary paste, are taken over
+        // below so no offer is ever read inside the shell.
+        Item {
+          id: searchBox
           width: parent.width - searchBtn.width - Style.space(6)
-          placeholderText: root.spotifyMode ? "Search Spotify…" : "Search YouTube…"
-          foreground: root.bar.foreground
-          font.family: root.bar.fontFamily
-          font.pixelSize: Style.font.body
+          height: searchField.implicitHeight + 2 * Style.spacing.inputPaddingY
+            + Border.top(borderSpec) + Border.bottom(borderSpec)
           enabled: root.serviceAvailable
           opacity: enabled ? 1.0 : 0.4
-          // A writable TextInput reads the whole clipboard offer on every
-          // clipboard change to update canPaste, with no size or time bound.
-          // Read-only skips that read, so the field only listens while the
-          // panel is open instead of for the life of the shell.
-          readOnly: !root.popupOpen
 
-          onAccepted: root.runSearch()
-          Keys.onEscapePressed: root.closeFromPanel()
-          // Down hands the keyboard to the result list; the field keeps Left
-          // and Right for ordinary cursor movement within the query.
-          Keys.onDownPressed: root.enterList()
-          Keys.onTabPressed: root.toggleProvider()
+          readonly property bool hot: hover.hovered
+          readonly property var borderSpec: Border.controlSpec(
+            searchField.activeFocus ? "focus" : (hot ? "hover-cursor" : "normal"),
+            root.bar.foreground, Commons.Color.accent)
 
-          // Layer-shell hands the surface focus on open, but Qt still needs an
-          // item to hold active focus, so claim it once the panel maps.
-          onVisibleChanged: if (visible) Qt.callLater(forceActiveFocus)
-          Component.onCompleted: if (visible) Qt.callLater(forceActiveFocus)
+          HoverHandler { id: hover; cursorShape: Qt.IBeamCursor }
+
+          BorderSurface {
+            anchors.fill: parent
+            color: Style.controlFill(searchField.activeFocus, searchBox.hot, root.bar.foreground, Commons.Color.accent)
+            borderSpec: searchBox.borderSpec
+            radius: Style.cornerRadius
+          }
+
+          Item {
+            id: viewport
+            anchors.fill: parent
+            anchors.leftMargin: Style.spacing.controlPaddingX + Border.left(searchBox.borderSpec)
+            anchors.rightMargin: Style.spacing.controlPaddingX + Border.right(searchBox.borderSpec)
+            clip: true
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              width: parent.width
+              visible: searchField.text === "" && searchField.preeditText === ""
+              text: root.spotifyMode ? "Search Spotify…" : "Search YouTube…"
+              textFormat: Text.PlainText
+              color: Qt.darker(root.bar.foreground, 1.6)
+              font: searchField.font
+              elide: Text.ElideRight
+            }
+
+            TextEdit {
+              id: searchField
+              anchors.verticalCenter: parent.verticalCenter
+              // TextEdit does not scroll itself; slide it left so the cursor
+              // stays inside the viewport on a long query.
+              x: Math.min(0, viewport.width - cursorRectangle.x - cursorRectangle.width)
+              width: Math.max(viewport.width, implicitWidth)
+              textFormat: TextEdit.PlainText
+              wrapMode: TextEdit.NoWrap
+              color: root.bar.foreground
+              selectionColor: Style.selectionFillFor(root.bar.foreground, Commons.Color.accent)
+              selectedTextColor: root.bar.foreground
+              selectByMouse: true
+              font.family: root.bar.fontFamily
+              font.pixelSize: Style.font.body
+
+              // Single line: anything that slips a line break in (an IME
+              // commit, say) is folded back into spaces.
+              onTextChanged: if (/[\r\n]/.test(text)) {
+                var pos = cursorPosition
+                text = text.replace(/[\r\n]+/g, " ")
+                cursorPosition = Math.min(pos, length)
+              }
+
+              Keys.onPressed: function(event) {
+                if (event.matches(StandardKey.Paste)) {
+                  event.accepted = true
+                  root.pasteQuery()
+                } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                  event.accepted = true
+                  root.runSearch()
+                }
+              }
+              Keys.onEscapePressed: root.closeFromPanel()
+              // Down hands the keyboard to the result list; the field keeps Left
+              // and Right for ordinary cursor movement within the query.
+              Keys.onDownPressed: root.enterList()
+              Keys.onTabPressed: root.toggleProvider()
+
+              // Layer-shell hands the surface focus on open, but Qt still needs an
+              // item to hold active focus, so claim it once the panel maps.
+              onVisibleChanged: if (visible) Qt.callLater(forceActiveFocus)
+              Component.onCompleted: if (visible) Qt.callLater(forceActiveFocus)
+            }
+
+            // Middle click would paste the primary selection straight into
+            // the shell, unbounded. Swallow it and just focus the field.
+            MouseArea {
+              anchors.fill: parent
+              acceptedButtons: Qt.MiddleButton
+              onPressed: searchField.forceActiveFocus()
+            }
+          }
         }
 
         Button {
