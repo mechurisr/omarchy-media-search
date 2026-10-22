@@ -1,28 +1,56 @@
 #!/usr/bin/env python3
 """Cover art for Media Search.
 
-Players hand over cover art as a URL. A remote one is downloaded here rather
-than by Qt's Image, which would buffer the whole response inside the shell
-process before decoding it, with no limit on its size:
+Players hand over cover art as a URL. The shell never decodes that image
+itself: Qt's Image would buffer a remote response without a size limit, and
+even a small file can expand enormously while it is decoded (a PNG's
+compressed text chunks, a huge declared canvas). Instead the image is decoded
+here, in a separate process with memory and time limits, and re-encoded as a
+small binary PPM, which the shell can decode in bounded time and memory:
 
-  art-helper fetch URL    download URL into the cache, print "PATH<TAB>URL"
+  art-helper fetch URL    download an http(s) URL, print "PATH<TAB>URL"
+  art-helper local URL    convert a file:// URL, print "PATH<TAB>URL"
 
 Only http(s) is fetched, only an image/* response is kept, and the download
-stops at MAX_BYTES or after DEADLINE seconds in total. Any failure prints
-nothing and exits non-zero, so the panel just shows its placeholder.
+stops at MAX_BYTES or after DEADLINE seconds in total. Only JPEG, PNG, GIF and
+WebP input is decoded. Any failure prints nothing and exits non-zero, so the
+panel just shows its placeholder.
 """
 
 import hashlib
 import os
+import resource
 import signal
+import stat
+import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 MAX_BYTES = 4 * 1024 * 1024
 DEADLINE = 10
 CHUNK = 64 * 1024
 KEEP_FILES = 64
+
+# The output never exceeds THUMB x THUMB RGB pixels.
+THUMB = 256
+MAX_OUTPUT = THUMB * THUMB * 3 + 64
+# Limits for the decoder process. ImageMagick enforces its own pixel and
+# memory limits, and RLIMIT_AS backs them up for anything a codec library
+# allocates on its own.
+DECODE_MEMORY = 512 * 1024 * 1024
+DECODE_LIMITS = [
+    "-limit", "memory", "128MiB",
+    "-limit", "map", "256MiB",
+    "-limit", "disk", "0",
+    "-limit", "area", "64MP",
+    "-limit", "width", "8192",
+    "-limit", "height", "8192",
+    "-limit", "list-length", "16",
+    "-limit", "thread", "1",
+    "-limit", "time", str(DEADLINE),
+]
 
 CACHE_DIR = os.path.join(
     os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
@@ -53,14 +81,13 @@ def out_of_time(signum, frame):
     raise TimeoutError("cover art download took too long")
 
 
-def download(url, dest):
+def download(url, tmp):
     # The socket timeout only bounds each read, so a server dribbling bytes
     # would keep going; the alarm caps the whole fetch, DNS included.
     signal.signal(signal.SIGALRM, out_of_time)
     signal.alarm(DEADLINE)
     opener = urllib.request.build_opener(HttpOnlyRedirects)
     request = urllib.request.Request(url, headers={"User-Agent": "omarchy-media-search"})
-    tmp = dest + ".%d.tmp" % os.getpid()
     try:
         with opener.open(request, timeout=DEADLINE) as resp:
             if not resp.headers.get_content_type().startswith("image/"):
@@ -78,36 +105,142 @@ def download(url, dest):
                     if size > MAX_BYTES:
                         return False
                     out.write(chunk)
-        if size == 0:
-            return False
-        os.replace(tmp, dest)
-        return True
+        return size > 0
     except (OSError, ValueError, urllib.error.URLError):
         return False
     finally:
         signal.alarm(0)
-        if os.path.exists(tmp):
-            os.remove(tmp)
+
+
+def copy_local(path, tmp):
+    """Copy a regular file of at most MAX_BYTES, so the decoder reads a file
+    nobody else can change halfway and never blocks on a FIFO or device."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
+    except OSError:
+        return False
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= MAX_BYTES:
+            return False
+        with os.fdopen(fd, "rb") as src, open(tmp, "wb") as out:
+            fd = -1
+            data = src.read(MAX_BYTES + 1)
+            if not data or len(data) > MAX_BYTES:
+                return False
+            out.write(data)
+        return True
+    except OSError:
+        return False
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
+
+def sniff(path):
+    """The ImageMagick coder for a file, chosen from its leading bytes rather
+    than left to ImageMagick, which would also accept SVG, PostScript and
+    other formats that run far more code."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(12)
+    except OSError:
+        return None
+    if head.startswith(b"\xff\xd8\xff"):
+        return "JPEG"
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "PNG"
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        return "GIF"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "WEBP"
+    return None
+
+
+def limit_decoder():
+    resource.setrlimit(resource.RLIMIT_AS, (DECODE_MEMORY, DECODE_MEMORY))
+    resource.setrlimit(resource.RLIMIT_CPU, (DEADLINE, DEADLINE))
+
+
+def convert(src, dest):
+    """Decode src (first frame only) and write a stripped PPM of at most
+    THUMB x THUMB pixels to dest."""
+    coder = sniff(src)
+    if not coder:
+        return False
+    out = dest + ".%d.ppm" % os.getpid()
+    try:
+        result = subprocess.run(
+            ["magick", *DECODE_LIMITS, "%s:%s[0]" % (coder, src),
+             "-auto-orient", "-thumbnail", "%dx%d>" % (THUMB, THUMB),
+             "-strip", "-depth", "8", "PPM:" + out],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=DEADLINE,
+            preexec_fn=limit_decoder)
+        if result.returncode != 0:
+            return False
+        if not 0 < os.path.getsize(out) <= MAX_OUTPUT:
+            return False
+        with open(out, "rb") as f:
+            if f.read(2) != b"P6":
+                return False
+        os.replace(out, dest)
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+    finally:
+        if os.path.exists(out):
+            os.remove(out)
+
+
+def resolve(url, key, obtain):
+    """Shared by both commands: reuse the cached conversion for key, or
+    obtain the original into a temporary file and convert it."""
+    os.makedirs(CACHE_DIR, mode=0o700, exist_ok=True)
+    dest = os.path.join(CACHE_DIR, hashlib.sha256(key.encode()).hexdigest()[:32] + ".ppm")
+    if os.path.isfile(dest):
+        os.utime(dest)
+    else:
+        tmp = dest + ".%d.src" % os.getpid()
+        try:
+            if not obtain(tmp) or not convert(tmp, dest):
+                return 1
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        prune()
+    print("%s\t%s" % (dest, url))
+    return 0
 
 
 def cmd_fetch(args):
     if len(args) != 1 or not args[0].lower().startswith(("http://", "https://")):
         return 1
     url = args[0]
-    os.makedirs(CACHE_DIR, mode=0o700, exist_ok=True)
-    dest = os.path.join(CACHE_DIR, hashlib.sha256(url.encode()).hexdigest()[:32])
-    if os.path.isfile(dest):
-        os.utime(dest)
-    elif not download(url, dest):
+    return resolve(url, url, lambda tmp: download(url, tmp))
+
+
+def cmd_local(args):
+    if len(args) != 1:
         return 1
-    else:
-        prune()
-    print("%s\t%s" % (dest, url))
-    return 0
+    url = args[0]
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != "file" or parts.netloc not in ("", "localhost"):
+        return 1
+    path = urllib.parse.unquote(parts.path)
+    # A local file can change under the same URL, so its cache key also
+    # carries its size and modification time.
+    try:
+        info = os.stat(path)
+    except OSError:
+        return 1
+    key = "%s#%d:%d" % (url, info.st_size, info.st_mtime_ns)
+    return resolve(url, key, lambda tmp: copy_local(path, tmp))
 
 
 COMMANDS = {
     "fetch": cmd_fetch,
+    "local": cmd_local,
 }
 
 

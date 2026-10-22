@@ -426,10 +426,11 @@ Item {
   readonly property string artUrl: activePlayer && activePlayer.trackArtUrl ? activePlayer.trackArtUrl : ""
 
   // ---------------------------------------------------------- cover art
-  // What the panel's Image actually loads. A local file goes through as is; a
-  // remote URL is fetched by art-helper with a size and time cap first, since
-  // Qt would buffer the whole response inside the shell before decoding it.
-  // Any other scheme gets no art.
+  // What the panel's Image actually loads: always a small PPM written by
+  // art-helper, never the player's own image. The helper downloads a remote
+  // URL with a size and time cap, and decodes both remote and local art in its
+  // own memory-limited process, since a small file can still expand to
+  // gigabytes while Qt decodes it inside the shell. Any other scheme gets no art.
   readonly property string artHelper: decodeURIComponent(
     Qt.resolvedUrl("art-helper").toString().replace(/^file:\/\//, ""))
   property string artSource: ""
@@ -439,21 +440,19 @@ Item {
   function resolveArt() {
     var url = artUrl
     artFetchProc.running = false
-    if (url.indexOf("file://") === 0) {
-      artSource = url
-    } else if (/^https?:\/\//i.test(url)) {
-      artSource = ""
-      artFetchProc.url = url
-      Qt.callLater(function() { artFetchProc.running = true })
-    } else {
-      artSource = ""
-    }
+    artSource = ""
+    var mode = url.indexOf("file://") === 0 ? "local" : /^https?:\/\//i.test(url) ? "fetch" : ""
+    if (!mode) return
+    artFetchProc.mode = mode
+    artFetchProc.url = url
+    Qt.callLater(function() { artFetchProc.running = true })
   }
 
   Process {
     id: artFetchProc
+    property string mode: "fetch"
     property string url: ""
-    command: [root.artHelper, "fetch", url]
+    command: [root.artHelper, mode, url]
 
     // The helper echoes the URL back, so a run that finishes after the track
     // has already moved on cannot put the old cover up.
