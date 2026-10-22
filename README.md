@@ -282,6 +282,12 @@ refresh token and your app's Client ID in
 to Spotify's own API. The token never reaches the shell process, and no client
 secret is involved because the login uses PKCE.
 
+Cover art from a player is shown only from a local file. When a player hands
+over a web URL (Spotify, YouTube in `mpv`, a browser tab), `art-helper`
+downloads it first, keeping only `image/*` responses of up to 4 MB that arrive
+within 10 seconds, into `$XDG_CACHE_HOME/omarchy-media-search/art` (the newest
+64 are kept). The shell never loads a remote image itself.
+
 ## Develop
 
 ```bash

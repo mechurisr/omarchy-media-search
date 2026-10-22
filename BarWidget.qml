@@ -498,13 +498,14 @@ BarWidget {
             anchors.margins: Style.space(2)
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
-            source: root.activePlayer && root.activePlayer.trackArtUrl ? root.activePlayer.trackArtUrl : ""
+            // Already a local file: the service fetches remote art itself.
+            source: root.mediaService ? root.mediaService.artSource : ""
             visible: source !== ""
           }
 
           Text {
             anchors.centerIn: parent
-            visible: !root.activePlayer || !root.activePlayer.trackArtUrl
+            visible: !root.mediaService || !root.mediaService.artSource
             text: "󰝚"
             color: root.bar.foreground
             font.family: root.bar.fontFamily

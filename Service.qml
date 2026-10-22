@@ -424,6 +424,48 @@ Item {
   readonly property string artist: activePlayer ? (activePlayer.trackArtist || "") : ""
   readonly property string album: activePlayer && activePlayer.trackAlbum ? activePlayer.trackAlbum : ""
   readonly property string artUrl: activePlayer && activePlayer.trackArtUrl ? activePlayer.trackArtUrl : ""
+
+  // ---------------------------------------------------------- cover art
+  // What the panel's Image actually loads. A local file goes through as is; a
+  // remote URL is fetched by art-helper with a size and time cap first, since
+  // Qt would buffer the whole response inside the shell before decoding it.
+  // Any other scheme gets no art.
+  readonly property string artHelper: decodeURIComponent(
+    Qt.resolvedUrl("art-helper").toString().replace(/^file:\/\//, ""))
+  property string artSource: ""
+
+  onArtUrlChanged: resolveArt()
+
+  function resolveArt() {
+    var url = artUrl
+    artFetchProc.running = false
+    if (url.indexOf("file://") === 0) {
+      artSource = url
+    } else if (/^https?:\/\//i.test(url)) {
+      artSource = ""
+      artFetchProc.url = url
+      Qt.callLater(function() { artFetchProc.running = true })
+    } else {
+      artSource = ""
+    }
+  }
+
+  Process {
+    id: artFetchProc
+    property string url: ""
+    command: [root.artHelper, "fetch", url]
+
+    // The helper echoes the URL back, so a run that finishes after the track
+    // has already moved on cannot put the old cover up.
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var line = text.trim()
+        var tab = line.indexOf("\t")
+        if (tab > 0 && line.slice(tab + 1) === root.artUrl) root.artSource = "file://" + line.slice(0, tab)
+      }
+    }
+  }
   readonly property string identity: activePlayer ? (activePlayer.identity || activePlayer.desktopEntry || "") : ""
 
   function isProxyPlayer(player) {
