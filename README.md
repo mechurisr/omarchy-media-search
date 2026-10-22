@@ -285,12 +285,17 @@ secret is involved because the login uses PKCE.
 
 The shell never decodes a player's cover art itself. When a player hands over
 a web URL (Spotify, YouTube in `mpv`), `art-helper` downloads it first, keeping
-only `image/*` responses of up to 4 MB that arrive within 10 seconds. That
+only `image/*` responses of up to 4 MB that arrive within 10 seconds, and
+following at most 5 redirects without reading their bodies. That
 download, or a local `file://` image of up to 4 MB (a browser tab), is then
 decoded by ImageMagick in a separate process limited in memory, pixel count and
 time, accepting only JPEG, PNG, GIF and WebP, and re-encoded as a stripped PPM
 of at most 256×256 pixels in `$XDG_CACHE_HOME/omarchy-media-search/art` (the
 newest 64 are kept). That PPM is the only image the shell loads.
+
+`spotify-helper` likewise reads at most 1 MB of any Spotify API response,
+error bodies and redirects included, and gives up on a body still arriving
+after 20 seconds.
 
 ## Develop
 

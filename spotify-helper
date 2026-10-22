@@ -52,6 +52,11 @@ STATE_FILE = os.path.join(STATE_DIR, "spotify.json")
 
 MPRIS_NAME = "org.mpris.MediaPlayer2.spotify"
 
+# Every Web API answer this helper uses is a few KB; anything past MAX_BODY,
+# or still arriving after BODY_DEADLINE seconds, is treated as a failure.
+MAX_BODY = 1024 * 1024
+BODY_DEADLINE = 20
+
 
 class NotConnected(Exception):
     pass
@@ -87,6 +92,38 @@ def save_state(state):
 
 # ------------------------------------------------------------------ http
 
+class DrainlessRedirects(urllib.request.HTTPRedirectHandler):
+    """urllib reads a redirect's whole body before following it; close the
+    response first so that read finds nothing."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None:
+            fp.close()
+        return new
+
+
+OPENER = urllib.request.build_opener(DrainlessRedirects)
+
+
+def read_body(resp):
+    """Read at most MAX_BODY bytes within BODY_DEADLINE seconds; the socket
+    timeout alone only bounds each read."""
+    deadline = time.monotonic() + BODY_DEADLINE
+    chunks = []
+    size = 0
+    while True:
+        chunk = resp.read1(64 * 1024)
+        if not chunk:
+            return b"".join(chunks)
+        size += len(chunk)
+        if size > MAX_BODY:
+            raise OSError("response body too large")
+        if time.monotonic() > deadline:
+            raise OSError("response body took too long")
+        chunks.append(chunk)
+
+
 def request(method, url, token=None, form=None, body=None):
     headers = {}
     data = None
@@ -102,8 +139,8 @@ def request(method, url, token=None, form=None, body=None):
         data = b""
     req = urllib.request.Request(url, data=data, method=method, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            raw = resp.read()
+        with OPENER.open(req, timeout=15) as resp:
+            raw = read_body(resp)
             # Some player endpoints answer 200 with a non-JSON body (an
             # opaque id) instead of 204; nothing here needs it.
             try:
@@ -113,13 +150,15 @@ def request(method, url, token=None, form=None, body=None):
     except urllib.error.HTTPError as e:
         reason = ""
         try:
-            err = json.loads(e.read()).get("error")
+            err = json.loads(read_body(e)).get("error")
             if isinstance(err, dict):
                 reason = err.get("reason") or err.get("message", "")
             else:
                 reason = str(err or "")
-        except (ValueError, AttributeError):
+        except (ValueError, AttributeError, OSError):
             pass
+        finally:
+            e.close()
         raise ApiError(e.code, reason)
 
 
