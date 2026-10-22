@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "mechurisr.media-search",
   "name": "Media Search",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "author": "chanwook lee",
   "license": "MIT",
   "description": "Replaces Omarchy's media widget with one that also searches YouTube (streamed through mpv) and Spotify (played on your Spotify app), with optional autoplay of YouTube's related radio mix.",

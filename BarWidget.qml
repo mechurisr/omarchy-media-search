@@ -314,6 +314,11 @@ BarWidget {
           font.pixelSize: Style.font.body
           enabled: root.serviceAvailable
           opacity: enabled ? 1.0 : 0.4
+          // A writable TextInput reads the whole clipboard offer on every
+          // clipboard change to update canPaste, with no size or time bound.
+          // Read-only skips that read, so the field only listens while the
+          // panel is open instead of for the life of the shell.
+          readOnly: !root.popupOpen
 
           onAccepted: root.runSearch()
           Keys.onEscapePressed: root.closeFromPanel()
